@@ -1,12 +1,14 @@
 - name: Install Nessus Agent on Linux Servers
   hosts: "{{ target }}"
   become: yes
+  ignore_errors: yes
   vars:
     nessus_key: XXXXXXXXXX
     agent_group: XXXXXX
     agent_host: XXXX
     agent_port: XXXXX
-    agent_file_src: /tmp/nessus/CM-295445_NessusAgent-10.4.1-es7.x86_64.rpm
+    pkg_loc: /tmp/CM-295445_NessusAgent-10.4.1-es7.x86_64.rpm
+  
   tasks:
   - name: Check link status
     shell: /opt/nessus_agent/sbin/nessuscli agent status; true
@@ -16,9 +18,15 @@
     shell: service nessusagent status; true
     register: nessus_agent_service_status
  
+  - name: Copy Installation file to remote host
+    copy:
+      src: "{{ pkg_loc }}"
+      dest: "{{ pkg_loc }}"
+    when: "('Linked to: {{ agent_host }}' not in nessus_link_status.stdout) and ('active (running)' not in nessus_agent_service_status.stdout)"
+
   - name: Install Nessus Agent rpm from a local file
     yum:
-      name: "{{ agent_file_src }}"
+      name: "{{ pkg_loc }}"
       state: present
     when: "'Linked to: {{ agent_host }}' not in nessus_link_status.stdout"
 
@@ -30,7 +38,7 @@
       --key={{ nessus_key }} 
       --groups={{ agent_group }}
     when: "'Linked to: {{ agent_host }}' not in nessus_link_status.stdout"
-  
+    
   - name: Ensure Nessus Agent is started
     service:
       name: nessusagent
@@ -38,8 +46,12 @@
       enabled: yes
     when: "('Linked to: {{ agent_host }}' not in nessus_link_status.stdout) and ('active (running)' not in nessus_agent_service_status.stdout)"
 
-  - name: Verify Nessus is Running
-    #command: service nessusagent status
-    systemd:
-      name: nessusagent
-    register: nessus_status
+  - name: Ensure Nessus Agent is Installed and Linked to Tenable 
+    debug:
+      msg: Nessus Agent is Succesfully Installed on {{ ansible_fqdn }} and linked To Tenable
+    when: "('Linked to: {{ agent_host }}' in nessus_link_status.stdout) and ('active (running)' in nessus_agent_service_status.stdout)"
+  
+  - name: If Nessus Agent is not Installed oor Linked to Tenable 
+    debug:
+      msg: Nessus Agent Installation on {{ ansible_fqdn }} was not successful
+    when: "('Linked to: {{ agent_host }}' not in nessus_link_status.stdout) and ('active (running)' not in nessus_agent_service_status.stdout)"
